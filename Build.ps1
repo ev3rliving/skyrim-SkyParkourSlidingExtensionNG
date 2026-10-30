@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 & $CMake --install "$PSScriptRoot/build" --config Release --prefix "$PSScriptRoot/Data"
 if ($LASTEXITCODE -ne 0) { throw 'Staging failed.' }
-Compress-Archive -Path "$PSScriptRoot/Data/*" -DestinationPath "$PSScriptRoot/MomentumSlideSE-0.3.1-test.zip" -Force
+Compress-Archive -Path "$PSScriptRoot/Data/*" -DestinationPath "$PSScriptRoot/SkyParkourSlidingExtension-1.1-Steam-1.6.1170.zip" -Force
 
 
 

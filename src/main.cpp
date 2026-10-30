@@ -188,7 +188,9 @@ struct NotifyHook {
         auto* p=RE::PlayerCharacter::GetSingleton();
         if(!p || holder!=static_cast<RE::IAnimationGraphManagerHolder*>(p)) return original(holder,event);
         if(event=="SkyParkour_Slide" && cleanup.Pending()) return false;
-        if(active && (event=="SkyParkour_SlideToSneak" || event=="SkyParkour_SlideToSneak_Adv")) return false;
+        // Forward SkyParkour's normal and advanced slide-to-sneak events unchanged.
+        // Its input listener selects the configured mode and updates sneak state
+        // only when the original animation graph accepts the event.
         if(active && event=="SkyParkour_SlideStop" && !stopping) {
             // External exit: do not delay the native transition or keep a frozen clip.
             if(debug) spdlog::info("Native slide exit; elapsed {:.3f}s, clip {:.3f}, rate {:.2f}",elapsed,clipTime.load(),clockRate.load());
@@ -372,7 +374,7 @@ void OnMessage(SKSE::MessagingInterface::Message* m) {
         PlayerHook::original=player.write_vfunc(0xAD,&PlayerHook::Call);
         ClipHook::original=clip.write_vfunc(5,&ClipHook::Call);
         GroundHook::original=ground.write_vfunc(8,&GroundHook::Call);
-        spdlog::info("MomentumSlideSE 0.3.1: smooth recovery, reconciled support, stock flat timing, {:.2f}s contact grace. Hooks installed for 1.6.1170.",config.contactGrace);
+        spdlog::info("MomentumSlideSE 1.1: smooth recovery, reconciled support, stock flat timing, {:.2f}s contact grace. Hooks installed for 1.6.1170.",config.contactGrace);
     } else if(m->type==SKSE::MessagingInterface::kDataLoaded) {
         static InputSink sink;
         if(auto* input=RE::BSInputDeviceManager::GetSingleton()) input->AddEventSink(&sink);
@@ -385,7 +387,7 @@ void OnMessage(SKSE::MessagingInterface::Message* m) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version=[] {
     SKSE::PluginVersionData info;
-    info.PluginVersion({0,3,1,0}); info.PluginName("MomentumSlideSE"); info.AuthorName("MomentumSlideSE contributors");
+    info.PluginVersion({1,1,0,0}); info.PluginName("MomentumSlideSE"); info.AuthorName("MomentumSlideSE contributors");
     info.UsesAddressLibrary(); info.UsesStructsPost629(); info.CompatibleVersions({runtime}); return info;
 }();
 extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {

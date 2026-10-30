@@ -1,0 +1,4 @@
+/build/
+/Data/
+*.zip
+__pycache__/

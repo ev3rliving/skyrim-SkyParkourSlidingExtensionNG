@@ -1,4 +1,4 @@
-# Verification — 0.3.1
+# Verification — 1.1
 
 ## Game evidence and diagnosed defects
 
@@ -6,9 +6,17 @@ The user's 0.2.0 log is preserved locally in `diagnostics/0.2.0-user-test.log`, 
 
 Source inspection also confirms crouch cancellation/contact timeout directly sent a synthetic slide-stop event. This bypassed the remaining animation, explaining the missing recovery for those exits.
 
-## Revision
+## Sneak Entry change in 1.1
 
-0.3.1 adds single-snapshot normal validation at all three normalization call sites, a finite-output guard before writing controller velocity, and deferred graph-dependent cleanup. Pending cleanup survives Reset and is retried even after the local slide is inactive; new slide requests are rejected until delivery. Retry dispatch is guarded against reentrant callbacks. No forced unlocking of unrelated controls is introduced.
+Removed the active-slide rejection of SkyParkour_SlideToSneak and SkyParkour_SlideToSneak_Adv. Both events follow the existing chained original-notify path and return its acceptance result unchanged. SkyParkour's SlideListener chooses its configured mode and sets the actor/graph sneak state only on acceptance. Normal entry does not force recovery, so momentum can continue with sneak state; advanced entry remains gated by SkyParkour's recovery window. The original slide stop handler remains responsible for sprint/sneak exit and control restoration.
+
+Source reference: SkyParkour src/Listeners/SlideListener.cpp and src/CrouchSliding.cpp. The supplied English translation describes Advanced Sneak Entry as holding the button to enter sneak, with sprint continuation otherwise.
+
+In-game checks still needed: Advanced Sneak Entry off/on; tap versus hold; flat and downhill; second-crouch recovery; first/third person; verify sneak/sprint state and control restoration after each slide. No 1.1 game test has been performed.
+
+## Earlier revision
+
+0.3.1 added single-snapshot normal validation at all three normalization call sites, a finite-output guard before writing controller velocity, and deferred graph-dependent cleanup. Pending cleanup survives Reset and is retried even after the local slide is inactive; new slide requests are rejected until delivery. Retry dispatch is guarded against reentrant callbacks. No forced unlocking of unrelated controls is introduced.
 
 Native contact accepts on-ground state plus valid normal and either the support flag or supported/sliding surfaceInfo. If native evidence is inconclusive, a main-update ray probes from 12 game units above the feet to 24 below. The player's collision group is retained; static, terrain, ground and stair-helper layers with upward normals are accepted. The ray runs under the Havok world's read lock. Its copied result is published under a separate mutex after the world lock is released. Physics callbacks read only that snapshot, never cast rays, and reject snapshots older than 100 ms. Probe evidence does not override non-grounded, no-sim or ragdoll states. There is no ground snapping or fabricated support flag.
 
@@ -20,8 +28,8 @@ Additional regression cases reject zero, short, downward, infinite and NaN norma
 
 MSVC 19.44 x64 Release build and CTest. Regression cases cover the exact support/surfaceInfo disagreement from the log; supported/sliding surfaces; fresh versus absent probe evidence; airborne, ragdoll and invalid-normal rejection; normal recovery despite a continued steep downhill at 30/60/144Hz; stock flat duration across three playback speeds; uphill/downhill timing; 120-second sustained slopes; transition boundaries; contact grace; speed cap and cancellation input.
 
-`verify_build.py` checks x64 architecture, SKSE exports, version 0.3.1, Skyrim 1.6.1170 metadata, exact archive/staged DLL and INI equality, no SkyParkour assets in the install ZIP, and unchanged Ground SE/jump DLL hashes. The supplied first/third-person clips' recovery at 0.783333 and stop at 0.850000 animation seconds remain after the retimed window ending at 0.70.
+`verify_build.py` checks x64 architecture, SKSE exports, version 1.1, Skyrim 1.6.1170 metadata, exact archive/staged DLL and INI equality, no SkyParkour assets in the install ZIP, and reports historical Ground SE/jump DLL comparisons. The supplied first/third-person clips' recovery at 0.783333 and stop at 0.850000 animation seconds remain after the retimed window ending at 0.70.
 
 ## Limits
 
-The user's 0.3.0 playtest logged 42 starts and 42 native exits, with no warnings, errors or recovery timeouts, and the user reported improved behavior. No 0.3.1 in-game test has been performed. Pure tests validate contact decisions, cleanup retry state and animation timing; they do not execute Skyrim or validate Havok raycast results or event delivery through a recreated animation graph. Both reference source checkouts and user logs are excluded from distributable archives.
+The user's 0.3.0 playtest logged 42 starts and 42 native exits, with no warnings, errors or recovery timeouts, and the user reported improved behavior. No 1.1 in-game test has been performed. Pure tests validate contact decisions, cleanup retry state and animation timing; they do not execute Skyrim or validate Havok raycast results or event delivery through a recreated animation graph. Both reference source checkouts and user logs are excluded from distributable archives.
