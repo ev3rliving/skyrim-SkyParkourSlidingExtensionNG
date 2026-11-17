@@ -1,4 +1,14 @@
-/build/
-/Data/
+build/
+build-*/
+dist/
+release/
+Data/
+references/
 *.zip
+*.log
+*.dll
+*.exe
+*.lib
+*.obj
+*.pdb
 __pycache__/

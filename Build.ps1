@@ -1,7 +1,7 @@
 param(
     [string]$CMake = 'cmake',
     [string]$Generator = 'Ninja',
-    [string]$CommonLibPackage = (Join-Path $PSScriptRoot '../SkyrimSE/package'),
+    [string]$BuildDirectory = 'build-universal',
     [string]$PortableToolsRoot = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -14,18 +14,18 @@ if ($PortableToolsRoot) {
     $env:INCLUDE = "$taskVC/include;$taskSDK/Include/10.0.26100.0/ucrt;$taskSDK/Include/10.0.26100.0/shared;$taskSDK/Include/10.0.26100.0/um;$taskSDK/Include/10.0.26100.0/winrt"
     $env:LIB = "$taskVC/lib/x64;$taskSDK/Lib/10.0.26100.0/ucrt/x64;$taskSDK/Lib/10.0.26100.0/um/x64"
 }
-$taskArguments = @('-S', $PSScriptRoot, '-B', "$PSScriptRoot/build", '-G', $Generator, "-DCOMMONLIB_PACKAGE=$CommonLibPackage")
+$taskArguments = @('-S', $PSScriptRoot, '-B', "$PSScriptRoot/$BuildDirectory", '-G', $Generator)
 if ($Generator -like 'Visual Studio*') { $taskArguments += @('-A', 'x64') }
 else { $taskArguments += '-DCMAKE_BUILD_TYPE=Release' }
 & $CMake @taskArguments
 if ($LASTEXITCODE -ne 0) { throw 'Configuration failed.' }
-& $CMake --build "$PSScriptRoot/build" --config Release --parallel 2
+& $CMake --build "$PSScriptRoot/$BuildDirectory" --config Release --parallel 2
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-& (Join-Path (Split-Path (Get-Command $CMake).Source) 'ctest.exe') --test-dir "$PSScriptRoot/build" -C Release --output-on-failure
+& (Join-Path (Split-Path (Get-Command $CMake).Source) 'ctest.exe') --test-dir "$PSScriptRoot/$BuildDirectory" -C Release --output-on-failure
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-& $CMake --install "$PSScriptRoot/build" --config Release --prefix "$PSScriptRoot/Data"
+& $CMake --install "$PSScriptRoot/$BuildDirectory" --config Release --component Slide --prefix "$PSScriptRoot/dist/universal"
 if ($LASTEXITCODE -ne 0) { throw 'Staging failed.' }
-Compress-Archive -Path "$PSScriptRoot/Data/*" -DestinationPath "$PSScriptRoot/SkyParkourSlidingExtension-1.1-Steam-1.6.1170.zip" -Force
+Compress-Archive -Path "$PSScriptRoot/dist/universal/*" -DestinationPath "$PSScriptRoot/SkyParkourSlidingExtension-1.2.0.zip" -Force
 
 
 

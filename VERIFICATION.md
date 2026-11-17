@@ -1,4 +1,29 @@
-# Verification — 1.1
+# Verification — 1.2.0 universal (based on 1.1)
+
+## Current compatibility build
+
+Version 1.1 is the gameplay baseline. SlidePhysics.h and its existing regression
+tests are preserved. Normal/Advanced Sneak Entry still pass through the original
+notification handler. The changes concern loading, runtime-aware dependencies,
+hook validation and diagnostic logging.
+
+The same DLL targets Steam 1.5.97, 1.6.1170, 1.7.99, 1.7.104 and GOG 1.6.1179.
+CTest covers physics, supported-runtime selection, executable hook target checks
+and mocked actor/animation-graph offsets. The PE verifier checks the actual DLL's
+metadata/exports and invokes Query for all targets and unsupported/editor cases.
+These checks do not establish actual Havok/animation behavior in those executables.
+User testing on November 17, 2026, on Steam 1.6.1170 confirmed successful loading,
+all four hook validations, player-interface validation, and six slides with normal
+native exits. No extension warnings/errors, contact timeouts, forced interruptions
+or new crash logs appeared in that session. Other runtime game tests remain pending.
+
+November 17, 2026: Release build succeeded; SlidePhysics, RuntimeSupport and
+RuntimeLayouts all passed. The compiled DLL passed export/metadata inspection
+and real Query acceptance for all five target versions, plus editor/unsupported
+runtime rejection. SlidePhysics.h SHA256 matches the 1.1 baseline exactly:
+F77CF1D89023EEEB3A06842608D51F41E1D1F0D7114AA670EEC0BEA5DDCD054A.
+
+The historical observations below describe earlier builds, not a new game test.
 
 ## Game evidence and diagnosed defects
 

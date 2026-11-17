@@ -8,9 +8,11 @@
 #include <mutex>
 #include <chrono>
 #include "SlidePhysics.h"
+#include "RuntimeSupport.h"
+#include "HookValidation.h"
 
 namespace {
-constexpr REL::Version runtime{1,6,1170,0};
+bool hooksInstalled=false, interfacesValidated=false;
 Slide::Config config;
 bool enabled=true, debug=true;
 std::atomic_bool ready{}, active{}, endRequested{}, clipSeen{}, physicsSeen{};
@@ -53,7 +55,7 @@ bool GraphBool(RE::PlayerCharacter* p,const char* name) {
     bool value=false; return p->GetGraphVariableBool(name,value)&&value;
 }
 bool Eligible(RE::PlayerCharacter* p) {
-    if (!ready || !p || !p->Is3DLoaded()) return false;
+    if (!ready || !hooksInstalled || !interfacesValidated || !p || !p->Is3DLoaded()) return false;
     auto* ui=RE::UI::GetSingleton();
     auto* camera=RE::PlayerCamera::GetSingleton();
     if (!ui || ui->GameIsPaused() || !camera || !camera->currentState) return false;
@@ -104,9 +106,10 @@ void SampleFloor(RE::PlayerCharacter* p,RE::bhkCharacterController* c) {
             const float scale=RE::bhkWorld::GetWorldScale();
             pick.rayInput.from.quad=_mm_setr_ps(pos.x*scale,pos.y*scale,(pos.z+12.0f)*scale,0);
             pick.rayInput.to.quad=_mm_setr_ps(pos.x*scale,pos.y*scale,(pos.z-24.0f)*scale,0);
-            std::uint32_t filter=0; c->GetCollisionFilterInfo(filter);
             // Preserve the player's collision group to exclude its own body.
-            pick.rayInput.filterInfo=(filter & ~0x7Fu) | static_cast<std::uint32_t>(RE::COL_LAYER::kCharController);
+            RE::CFilter filter{}; c->GetCollisionFilterInfo(filter);
+            pick.rayInput.filterInfo.filter=(filter.filter & ~0x7Fu) | static_cast<std::uint32_t>(RE::COL_LAYER::kCharController);
+
             pick.rayInput.enableShapeCollectionFilter=true;
             {
                 RE::BSReadLockGuard worldLock(world->worldLock);
@@ -365,17 +368,44 @@ void OnMessage(SKSE::MessagingInterface::Message* m) {
     if(!m) return;
     if(m->type==SKSE::MessagingInterface::kPostPostLoad) {
         if(!GetModuleHandleW(L"SkyParkourNG.dll")) {spdlog::error("SkyParkourNG.dll missing; no hooks installed."); return;}
+        spdlog::info("SkyParkourNG.dll present; validating four hook targets before installation");
         // Install after plugins' Load/PostLoad hooks and chain every predecessor.
         REL::Relocation<std::uintptr_t> notify{RE::VTABLE_PlayerCharacter[3]};
         REL::Relocation<std::uintptr_t> player{RE::VTABLE_PlayerCharacter[0]};
         REL::Relocation<std::uintptr_t> clip{RE::VTABLE_hkbClipGenerator[0]};
         REL::Relocation<std::uintptr_t> ground{RE::VTABLE_bhkCharacterStateOnGround[0]};
+        const auto check=[](std::uintptr_t table,std::size_t slot,const char* name) {
+            const bool valid=Slide::Validation::HookTarget(table,slot);
+            if(valid) spdlog::info("Validated hook {} slot {:#x}",name,slot);
+            else spdlog::error("Hook validation failed: {} slot {:#x}; no hooks installed",name,slot);
+            return valid;
+        };
+        if(!check(notify.address(),1,"NotifyAnimationGraph") ||
+            !check(player.address(),0xAD,"Player Update") ||
+            !check(clip.address(),5,"Clip Update") ||
+            !check(ground.address(),8,"Ground Update")) return;
         NotifyHook::original=notify.write_vfunc(1,&NotifyHook::Call);
         PlayerHook::original=player.write_vfunc(0xAD,&PlayerHook::Call);
         ClipHook::original=clip.write_vfunc(5,&ClipHook::Call);
         GroundHook::original=ground.write_vfunc(8,&GroundHook::Call);
-        spdlog::info("MomentumSlideSE 1.1: smooth recovery, reconciled support, stock flat timing, {:.2f}s contact grace. Hooks installed for 1.6.1170.",config.contactGrace);
+        hooksInstalled=true;
+        spdlog::info("MomentumSlideSE 1.2.0: runtime {}; 1.1 gameplay and Sneak Entry preserved; {:.2f}s contact grace. Four hooks installed.",REL::Module::get().version().string(),config.contactGrace);
     } else if(m->type==SKSE::MessagingInterface::kDataLoaded) {
+        if(!hooksInstalled) return;
+        auto* player=RE::PlayerCharacter::GetSingleton();
+        const auto matches=[](const void* object,std::uintptr_t expected) {
+            return object && Slide::Validation::Accessible(reinterpret_cast<std::uintptr_t>(object),sizeof(std::uintptr_t)) &&
+                *static_cast<const std::uintptr_t*>(object)==expected;
+        };
+        const REL::Relocation<std::uintptr_t> primary{RE::VTABLE_PlayerCharacter[0]};
+        const REL::Relocation<std::uintptr_t> animation{RE::VTABLE_PlayerCharacter[3]};
+        interfacesValidated=player && matches(player,primary.address()) &&
+            matches(static_cast<RE::IAnimationGraphManagerHolder*>(player),animation.address());
+        if(!interfacesValidated) {
+            spdlog::error("Player interface validation failed; sliding extension remains inactive");
+            return;
+        }
+        spdlog::info("Player primary and animation interfaces validated; input registration ready");
         static InputSink sink;
         if(auto* input=RE::BSInputDeviceManager::GetSingleton()) input->AddEventSink(&sink);
     } else if(m->type==SKSE::MessagingInterface::kPreLoadGame) {
@@ -387,18 +417,35 @@ void OnMessage(SKSE::MessagingInterface::Message* m) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version=[] {
     SKSE::PluginVersionData info;
-    info.PluginVersion({1,1,0,0}); info.PluginName("MomentumSlideSE"); info.AuthorName("MomentumSlideSE contributors");
-    info.UsesAddressLibrary(); info.UsesStructsPost629(); info.CompatibleVersions({runtime}); return info;
+    info.PluginVersion({1,2,0,0}); info.PluginName("MomentumSlideSE"); info.AuthorName("ev3rliving");
+    info.UsesAddressLibrary();
+    // Runtime-aware CommonLib accessors cover both sides of the 1.6.629 layout change.
+    info.UsesNoStructs();
+    info.CompatibleVersions({{1,5,97,0},{1,6,1170,0},{1,6,1179,0},{1,7,99,0},{1,7,104,0}});
+
+    return info;
 }();
+// SKSE 2.0.20 uses Query rather than the AE version-data export.
+extern "C" __declspec(dllexport) bool SKSEPlugin_Query(const SKSE::QueryInterface* skse,SKSE::PluginInfo* info) {
+    if(!skse || !info) return false;
+    info->infoVersion=SKSE::PluginInfo::kVersion;
+    info->name="MomentumSlideSE";
+    info->version=REL::Version{1,2,0,0}.pack();
+    return !skse->IsEditor() && Slide::Runtime::Supported(skse->RuntimeVersion().pack());
+}
 extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
-    if(skse->IsEditor() || skse->RuntimeVersion()!=runtime) return false;
+    if(!skse || skse->IsEditor() || !Slide::Runtime::Supported(skse->RuntimeVersion().pack())) return false;
     try {
         if(auto directory=SKSE::log::log_directory()) {
             auto sink=std::make_shared<spdlog::sinks::basic_file_sink_mt>((*directory/"MomentumSlideSE.log").string(),true);
             spdlog::set_default_logger(std::make_shared<spdlog::logger>("MomentumSlideSE",sink));
             spdlog::flush_on(spdlog::level::info);
         }
+        spdlog::info("MomentumSlideSE 1.2.0 universal; Skyrim {}; supports Steam 1.5.97/1.6.1170/1.7.99/1.7.104 and GOG 1.6.1179",
+            skse->RuntimeVersion().string());
         SKSE::Init(skse); ReadSettings();
+        spdlog::info("Runtime family {}; Address Library format-5 build: {}; enabled {}",
+            REL::Module::IsAE()?"AE":"SE",true,enabled);
         if(!enabled) {spdlog::info("Disabled; no hooks installed."); return true;}
         return SKSE::GetMessagingInterface() && SKSE::GetMessagingInterface()->RegisterListener(OnMessage);
     } catch(const std::exception& e) {spdlog::error("Initialization failed: {}",e.what()); return false;}
